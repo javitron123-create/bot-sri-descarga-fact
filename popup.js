@@ -74,8 +74,30 @@ document.addEventListener('DOMContentLoaded', () => {
       
       // Auto-calcular la cantidad de filas reales de la página al abrir
       calcularFilas(true);
+      // Restaurar estado visual si ya está descargando
+      chrome.storage.local.get('estadoDescarga', (estData) => {
+        if (estData.estadoDescarga && estData.estadoDescarga.activa) {
+          restaurarInterfazDescargando(estData.estadoDescarga);
+        }
+      });
     }
   );
+
+  // ── Restaurar Interfaz si la descarga sigue activa ──────────
+  function restaurarInterfazDescargando(estado) {
+    isRunning = true;
+    btnDescargar.disabled = true;
+    btnDetener.style.display = 'block';
+    btnText.textContent = 'Descargando...';
+    btnIcon.textContent = '⏳';
+    smartIcon.style.display = 'none';
+    progressCont.style.display = 'flex';
+    resultLog.style.display = 'block';
+    
+    // Dejar un mensaje temporal hasta que lleguen los nuevos mensajes de PROGRESO
+    progressDet.textContent = 'Reanudando vista del progreso...';
+    setStatus('info', 'Bot trabajando en segundo plano...');
+  }
 
   // Eventos de formato
   selFormato.addEventListener('change', actualizarEjemplo);
