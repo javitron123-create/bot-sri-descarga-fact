@@ -46,13 +46,28 @@ const tiposResumen  = document.getElementById('tipos-resumen');
 
 let isRunning = false;
 let todosSeleccionados = true;
+let licenciaInfo = { mesesDescargados: [], activado: false };
+
+function verificarBloqueo() {
+  const overlay = document.getElementById('license-overlay');
+  if (overlay) {
+    if (!licenciaInfo.activado && licenciaInfo.mesesDescargados.length >= 3) {
+      overlay.style.display = 'flex';
+    } else {
+      overlay.style.display = 'none';
+    }
+  }
+}
 
 // ── Inicialización ──────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   // Cargar preferencias guardadas
   chrome.storage.local.get(
-    ['tipoDescarga', 'formatoNombre', 'desde', 'hasta', 'tiposComprobante', 'subcarpetaDestino', 'anio', 'mes', 'dia'],
+    ['tipoDescarga', 'formatoNombre', 'desde', 'hasta', 'tiposComprobante', 'subcarpetaDestino', 'anio', 'mes', 'dia', 'licencia'],
     (data) => {
+      if (data.licencia) licenciaInfo = data.licencia;
+      verificarBloqueo();
+
       if (data.tipoDescarga)  selTipo.value    = data.tipoDescarga;
       if (data.formatoNombre) selFormato.value = data.formatoNombre;
       if (data.desde)         inputDesde.value = data.desde;
@@ -119,6 +134,27 @@ document.addEventListener('DOMContentLoaded', () => {
     actualizarResumenTipos();
     guardarPreferencias();
   });
+
+  // Botón Activar Licencia
+  const btnActivar = document.getElementById('link-activar');
+  if (btnActivar) {
+    btnActivar.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (licenciaInfo.activado) {
+        alert('El sistema ya se encuentra en su versión Premium sin límites.');
+        return;
+      }
+      const pwd = prompt('Ingrese la Clave Maestra para desbloquear la versión completa:');
+      if (pwd === 'SIFT-PRO-PREMIUM-2026') {
+        licenciaInfo.activado = true;
+        chrome.storage.local.set({ licencia: licenciaInfo });
+        alert('¡Clave correcta! El sistema se ha desbloqueado para siempre.');
+        verificarBloqueo();
+      } else if (pwd !== null) {
+        alert('Clave incorrecta.');
+      }
+    });
+  }
 
   // Eventos principales
   btnCalcular.addEventListener('click', calcularFilas);
@@ -407,6 +443,26 @@ async function iniciarDescarga() {
   if (hasta > 0 && desde > hasta) {
     setStatus('error', 'El rango "Desde" no puede ser mayor que "Hasta"');
     return;
+  }
+
+  // Validación de Licencia
+  if (!licenciaInfo.activado) {
+    if (mes === 'Todos' || !mes) {
+      setStatus('error', 'En la versión de prueba no puede descargar "Todos" los meses a la vez. Seleccione un mes.');
+      return;
+    }
+    const periodo = `${anio}-${mes}`;
+    if (!licenciaInfo.mesesDescargados.includes(periodo)) {
+      if (licenciaInfo.mesesDescargados.length >= 3) {
+        verificarBloqueo();
+        return;
+      }
+      licenciaInfo.mesesDescargados.push(periodo);
+      chrome.storage.local.set({ licencia: licenciaInfo });
+      if (licenciaInfo.mesesDescargados.length >= 3) {
+        alert('Atención: Acaba de usar su 3er y último mes de prueba.');
+      }
+    }
   }
 
   isRunning = true;
