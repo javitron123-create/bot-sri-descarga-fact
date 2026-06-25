@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Descargas Masivas del SRI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+
+    <!-- ── Header ────────────────────────────────────────── -->
+    <div class="header">
+      <div class="header-icon">
+        <img src="icons/icon128.png" alt="SRI">
+      </div>
+      <div class="header-text">
+        <h1>Descargas Masivas del SRI</h1>
+        <div class="header-meta">
+          <span class="version-badge">v1.0.0</span>
+          <span class="sri-badge">🇪🇨 ECUADOR</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Status Bar ─────────────────────────────────────── -->
+    <div id="status-bar" class="status-bar status-idle">
+      <span class="status-dot"></span>
+      <span id="status-text">Listo para descargar</span>
+    </div>
+
+    <!-- ── Formulario ─────────────────────────────────────── -->
+    <div class="form-body">
+
+      <!-- Sección 1: Tipo de archivo -->
+      <div class="form-section">
+        <div class="section-label">
+          <span class="section-num">1</span>
+          <span>Archivos a descargar:</span>
+        </div>
+        <select id="sel-tipo-descarga" class="select-control">
+          <option value="xml">📄 Descargar XML/Sri</option>
+          <option value="xml_pdf">📄📑 Descargar XML/Sri + PDF</option>
+          <option value="pdf">📑 Descargar Solo PDF</option>
+        </select>
+      </div>
+
+      <!-- Sección Nueva: Período de Emisión -->
+      <div class="form-section">
+        <div class="section-label">
+           <span class="section-num">2</span>
+           <span>Período (Auto-restaurado en recargas):</span>
+        </div>
+        <div class="range-row" style="gap: 5px;">
+           <input type="text" id="input-anio" class="range-input" placeholder="Año" value="2026" style="width: 60px;">
+           <select id="sel-mes" class="select-control" style="width: auto; padding: 4px;">
+              <option value="Todos">Todos</option>
+              <option value="Enero">Enero</option>
+              <option value="Febrero">Febrero</option>
+              <option value="Marzo">Marzo</option>
+              <option value="Abril">Abril</option>
+              <option value="Mayo">Mayo</option>
+              <option value="Junio">Junio</option>
+              <option value="Julio">Julio</option>
+              <option value="Agosto">Agosto</option>
+              <option value="Septiembre">Septiembre</option>
+              <option value="Octubre">Octubre</option>
+              <option value="Noviembre">Noviembre</option>
+              <option value="Diciembre">Diciembre</option>
+           </select>
+           <input type="text" id="input-dia" class="range-input" placeholder="Día" value="Todos" style="width: 60px;">
+        </div>
+      </div>
+
+      <!-- Sección 3: Tipos de comprobante -->
+      <div class="form-section">
+        <div class="section-label">
+          <span class="section-num">3</span>
+          <span>Tipos de comprobante:</span>
+          <button id="btn-toggle-tipos" class="btn-link-toggle" title="Seleccionar / Deseleccionar todos">Todos</button>
+        </div>
+        <div class="tipos-grid">
+          <label class="tipo-check" data-cod="01">
+            <input type="checkbox" value="01" checked>
+            <span class="tipo-icon">🧾</span>
+            <span class="tipo-label">Factura</span>
+          </label>
+          <label class="tipo-check" data-cod="03">
+            <input type="checkbox" value="03" checked>
+            <span class="tipo-icon">🛒</span>
+            <span class="tipo-label">Liquidación de Compra</span>
+          </label>
+          <label class="tipo-check" data-cod="04">
+            <input type="checkbox" value="04" checked>
+            <span class="tipo-icon">📉</span>
+            <span class="tipo-label">Nota de Crédito</span>
+          </label>
+          <label class="tipo-check" data-cod="05">
+            <input type="checkbox" value="05" checked>
+            <span class="tipo-icon">📈</span>
+            <span class="tipo-label">Nota de Débito</span>
+          </label>
+          <label class="tipo-check" data-cod="07">
+            <input type="checkbox" value="07" checked>
+            <span class="tipo-icon">✂️</span>
+            <span class="tipo-label">Comprobante de Retención</span>
+          </label>
+        </div>
+        <div id="tipos-resumen" class="tipos-resumen">5 tipos seleccionados</div>
+      </div>
+
+      <!-- Sección 4: Formato de nombre -->
+      <div class="form-section">
+        <div class="section-label">
+          <span class="section-num">4</span>
+          <span>Formato de nombre:</span>
+        </div>
+        <select id="sel-formato-nombre" class="select-control">
+          <option value="clave">🔑 Clave de acceso (por defecto)</option>
+          <option value="tipo_ruc_serie">📋 Tipo + RUC + Serie</option>
+          <option value="fecha_tipo_serie_nombre">📅 Fecha + Tipo + Serie + Nombre</option>
+        </select>
+        <div class="ejemplo-nombre">
+          <span id="ejemplo-texto">Ej: 2101202401110179227800120010030000001234000...</span>
+        </div>
+      </div>
+
+      <!-- Sección 5: Rango de filas -->
+      <div class="form-section">
+        <div class="section-label">
+          <span class="section-num">5</span>
+          <span>Rango de filas a descargar:</span>
+        </div>
+        <div class="range-row">
+          <div class="range-group">
+            <label for="input-desde">Desde:</label>
+            <input type="number" id="input-desde" class="range-input" value="1" min="1">
+          </div>
+          <div class="range-group">
+            <label for="input-hasta">Hasta:</label>
+            <input type="number" id="input-hasta" class="range-input" placeholder="Auto" min="1">
+          </div>
+          <button id="btn-calcular" class="btn-calcular" title="Calcular documentos disponibles">
+            Calcular
+          </button>
+        </div>
+      </div>
+
+      <!-- Sección 6: Carpeta de destino -->
+      <div class="form-section">
+        <div class="section-label">
+          <span class="section-num">6</span>
+          <span>Carpeta de destino (en Descargas):</span>
+          <button id="btn-abrir-carpeta" class="btn-link-toggle" title="Abrir carpeta de descargas del sistema">📂 Abrir descargas</button>
+        </div>
+        <input type="text" id="input-subcarpeta" class="text-input" placeholder="Ej: SRI_Descargas" value="SRI_Descargas">
+        <div class="ejemplo-nombre" style="margin-top: 2px; font-size: 0.6rem; line-height: 1.3;">
+          <span>Ruta: <code>Descargas/[Tu_Carpeta]</code></span><br>
+          <span style="font-size: 0.58rem; opacity: 0.8; display: block; margin-top: 3px;">💡 Tip: Puedes usar subcarpetas, ej: <code>SRI/Facturas/2025</code>. Por seguridad de Chrome, el destino está dentro de la carpeta "Descargas". Para elegir dónde guardar en cada descarga, activa la opción "Preguntar dónde se guardará cada archivo antes de descargar" en la Configuración de Chrome.</span>
+        </div>
+      </div>
+
+      <!-- Sección 7: Descarga inteligente -->
+      <div class="form-section smart-section">
+        <div class="section-label">
+          <span class="section-num">7</span>
+          <span>¡Descarga Inteligente!</span>
+        </div>
+
+        <div class="smart-icon" id="smart-icon">😎</div>
+
+        <!-- Barra de progreso -->
+        <div id="progress-container" class="progress-container" style="display:none;">
+          <div class="progress-track">
+            <div id="progress-fill" class="progress-fill" style="width:0%"></div>
+          </div>
+          <div class="progress-stats">
+            <span id="progress-label">0 / 0 archivos</span>
+            <span id="progress-percent">0%</span>
+          </div>
+          <div id="progress-detail" class="progress-detail">Iniciando...</div>
+        </div>
+
+        <button id="btn-descargar" class="btn-download">
+          <span id="btn-icon">⬇️</span>
+          <span id="btn-text">Descarga inteligente</span>
+        </button>
+
+        <button id="btn-detener" class="btn-stop" style="display:none;">
+          ⏹️ Detener descarga
+        </button>
+
+        <div id="result-log" class="result-log" style="display:none;"></div>
+      </div>
+
+    </div><!-- /form-body -->
+
+    <!-- ── Footer ─────────────────────────────────────────── -->
+    <div class="footer">
+      <a href="https://srienlinea.sri.gob.ec" target="_blank" class="footer-link">🌐 Portal SRI</a>
+      <span class="footer-sep">|</span>
+      <a href="#" id="link-ayuda" class="footer-link">❓ Ayuda</a>
+      <span class="footer-sep">|</span>
+      <a href="mailto:soporte@sri.gob.ec" class="footer-link">📞 Contacto</a>
+    </div>
+
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

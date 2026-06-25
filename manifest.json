@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "Descargas Masivas del SRI",
+  "description": "Descarga Automática de Documentos Electrónicos del sitio web del SRI Ecuador (XML, PDF o ambos).",
+  "version": "1.0.0",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "default_title": "Descargas Masivas del SRI"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://srienlinea.sri.gob.ec/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "permissions": [
+    "downloads",
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://srienlinea.sri.gob.ec/*"
+  ]
+}
