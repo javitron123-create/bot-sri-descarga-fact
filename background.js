@@ -88,6 +88,45 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
   }
 
+  if (message.action === 'EJECUTAR_EN_MAIN_WORLD_DATE') {
+    const tabId = sender.tab ? sender.tab.id : null;
+    if (tabId) {
+      chrome.scripting.executeScript({
+        target: { tabId: tabId },
+        world: 'MAIN',
+        func: (inputId, dateStr) => {
+          try {
+             var input = document.getElementById(inputId);
+             if (input) {
+               input.value = dateStr;
+               if (window.$) {
+                 var $input = window.$(input);
+                 if (typeof $input.datepicker === 'function') {
+                    $input.datepicker('setDate', dateStr);
+                 }
+                 $input.trigger('change');
+                 $input.trigger('blur');
+               } else {
+                 input.dispatchEvent(new Event('change', { bubbles: true }));
+                 input.dispatchEvent(new Event('blur', { bubbles: true }));
+               }
+               return { exito: true };
+             }
+             return { exito: false };
+          } catch(e) {
+             return { exito: false, error: e.message };
+          }
+        },
+        args: [message.inputId, message.dateStr]
+      }).then(results => {
+        sendResponse(results?.[0]?.result || { exito: false });
+      }).catch(err => {
+        sendResponse({ exito: false, error: err.message });
+      });
+      return true;
+    }
+  }
+
   // Reenvío al popup
   if (sender.tab) {
     chrome.runtime.sendMessage(message).catch(() => {

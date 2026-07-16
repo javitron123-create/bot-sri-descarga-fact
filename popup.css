@@ -162,6 +162,46 @@ body {
   50% { opacity: 0.2; }
 }
 
+/* ─── Tabs ───────────────────────────────────────────────── */
+.tabs-container {
+  display: flex;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.tab-btn {
+  flex: 1;
+  padding: 10px 0;
+  border: none;
+  background: transparent;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+}
+
+.tab-btn:hover {
+  color: var(--ecuador-red);
+  background: var(--bg-hover);
+}
+
+.tab-btn.active {
+  color: var(--ecuador-red);
+  border-bottom: 2px solid var(--ecuador-red);
+  background: var(--bg-hover);
+}
+
+.tab-panel {
+  display: none;
+}
+
+.tab-panel.active {
+  display: block;
+}
+
 /* ─── Form Body ──────────────────────────────────────────── */
 .form-body {
   padding: 10px 13px;
@@ -349,7 +389,7 @@ body {
   gap: 5px;
 }
 
-.tipo-check {
+.tipo-check, .tipo-check-emi {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -362,17 +402,17 @@ body {
   user-select: none;
 }
 
-.tipo-check:hover {
+.tipo-check:hover, .tipo-check-emi:hover {
   border-color: var(--accent-border);
   background: #F1F5F9;
 }
 
-.tipo-check:has(input:checked) {
+.tipo-check:has(input:checked), .tipo-check-emi:has(input:checked) {
   border-color: var(--accent-border);
   background: rgba(13, 148, 136, 0.06);
 }
 
-.tipo-check input[type="checkbox"] {
+.tipo-check input[type="checkbox"], .tipo-check-emi input[type="checkbox"] {
   appearance: none;
   width: 14px;
   height: 14px;
@@ -385,12 +425,12 @@ body {
   transition: all 0.15s;
 }
 
-.tipo-check input[type="checkbox"]:checked {
+.tipo-check input[type="checkbox"]:checked, .tipo-check-emi input[type="checkbox"]:checked {
   background: var(--ecuador-red);
   border-color: var(--ecuador-red);
 }
 
-.tipo-check input[type="checkbox"]:checked::after {
+.tipo-check input[type="checkbox"]:checked::after, .tipo-check-emi input[type="checkbox"]:checked::after {
   content: '';
   position: absolute;
   left: 2px; top: -1px;

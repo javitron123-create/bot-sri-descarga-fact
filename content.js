@@ -35,7 +35,7 @@
   ];
 
   // ── Escuchar mensajes del popup ─────────────────────────────
-  chrome.runtime.onMessage.addListener((msg) => {
+  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.action === 'INICIAR_DESCARGA') {
       cancelado = false;
       try {
@@ -47,27 +47,47 @@
         console.error('[SRI v3] Error síncrono en iniciarDescarga:', err);
         notificar('ERROR_DESCARGA', { mensaje: err.message || String(err) });
       }
+      sendResponse({ recibido: true });
     }
-    if (msg.action === 'DETENER_DESCARGA') {
+    else if (msg.action === 'INICIAR_DESCARGA_EMI') {
+      cancelado = false;
+      try {
+        iniciarDescargaEmi(msg.config).catch(err => {
+          console.error('[SRI v3] Error en iniciarDescargaEmi:', err);
+          notificar('ERROR_DESCARGA', { mensaje: err.message || String(err) });
+        });
+      } catch (err) {
+        console.error('[SRI v3] Error síncrono en iniciarDescargaEmi:', err);
+        notificar('ERROR_DESCARGA', { mensaje: err.message || String(err) });
+      }
+      sendResponse({ recibido: true });
+    }
+    else if (msg.action === 'DETENER_DESCARGA' || msg.action === 'DETENER_DESCARGA_EMI') {
       cancelado = true;
       ocultarBotonCancelar();
       // Limpiar estado persistente al detener
-      chrome.storage.local.get('estadoDescarga', (data) => {
+      chrome.storage.local.get(['estadoDescarga', 'estadoDescargaEmi'], (data) => {
         if (data.estadoDescarga) {
           data.estadoDescarga.activa = false;
           chrome.storage.local.set({ estadoDescarga: data.estadoDescarga });
         }
+        if (data.estadoDescargaEmi) {
+          data.estadoDescargaEmi.activa = false;
+          chrome.storage.local.set({ estadoDescargaEmi: data.estadoDescargaEmi });
+        }
       });
+      sendResponse({ recibido: true });
     }
-    if (msg.action === 'CALCULAR_FILAS') {
+    else if (msg.action === 'CALCULAR_FILAS') {
       try {
         const total = contarDocumentos();
         notificar('TOTAL_FILAS', { total });
       } catch (err) {
         console.error('[SRI v3] Error en contarDocumentos:', err);
       }
+      sendResponse({ recibido: true });
     }
-    return true;
+    // No usamos return true; porque respondemos sincrónicamente
   });
 
   // ══════════════════════════════════════════════════════════
@@ -124,7 +144,237 @@
   }
 
   // ══════════════════════════════════════════════════════════
-  //  PROCESAR EL SIGUIENTE TIPO EN EL ESTADO ACTUAL
+  //  MÁQUINA DE ESTADOS: EMITIDOS (Ciclo Completo)
+  // ══════════════════════════════════════════════════════════
+  //  MÁQUINA DE ESTADOS: EMITIDOS (Ciclo Completo)
+  // ══════════════════════════════════════════════════════════
+  async function iniciarDescargaEmi(config) {
+    const { anio, mes, diaDesde, diaHasta, tipoFmt, tiposComprobante } = config;
+    
+    if (!tiposComprobante || tiposComprobante.length === 0) {
+      notificar('ERROR_DESCARGA', { mensaje: 'No hay tipos seleccionados.' });
+      return;
+    }
+
+    console.log(`[SRI v3] Iniciando ciclo multi-tipo Emitidos del día ${diaDesde} al ${diaHasta}.`);
+    
+    try {
+      await chrome.storage.local.set({ colaDescargas: [] });
+      await chrome.storage.local.set({
+        estadoDescargaEmi: {
+          activa: true,
+          config: config,
+          diaActual: diaDesde,
+          tipoActualIndex: 0,
+          stats: { ok: 0, skip: 0, err: 0, porTipo: {} }
+        }
+      });
+    } catch (e) {
+      console.error('[SRI v3] Error al inicializar estado Emitidos:', e);
+    }
+    
+    notificar('PROGRESO', {
+      actual: 0, total: 0,
+      archivo: '🚀 Iniciando ciclo Emitidos...',
+      accion: 'skip'
+    });
+
+    mostrarBotonCancelar();
+    procesarSiguienteEmi();
+  }
+
+  async function procesarSiguienteEmi() {
+    try {
+      const data = await chrome.storage.local.get('estadoDescargaEmi');
+      if (!data.estadoDescargaEmi || !data.estadoDescargaEmi.activa || cancelado) return;
+      
+      const estado = data.estadoDescargaEmi;
+      const { config, diaActual, tipoActualIndex } = estado;
+      const { anio, mes, diaHasta, tiposComprobante, tipoFmt } = config;
+      
+      if (diaActual > diaHasta) {
+        // Fin de todo el proceso
+        ocultarBotonCancelar();
+        estado.activa = false;
+        await chrome.storage.local.set({ estadoDescargaEmi: estado });
+        
+        notificar('DESCARGA_COMPLETA', { 
+          ok: estado.stats.ok, skip: estado.stats.skip, err: estado.stats.err, 
+          total: estado.stats.ok + estado.stats.skip + estado.stats.err, 
+          porTipo: estado.stats.porTipo 
+        });
+        return;
+      }
+
+      if (tipoActualIndex >= tiposComprobante.length) {
+        // Fin del día actual, avanzar al siguiente día
+        estado.diaActual++;
+        estado.tipoActualIndex = 0;
+        await chrome.storage.local.set({ estadoDescargaEmi: estado });
+        return avanzarAlSiguienteEmi();
+      }
+
+      const tipo = tiposComprobante[tipoActualIndex];
+      const nombreTipo = TIPOS[tipo] || tipo;
+      const dayStr = diaActual.toString().padStart(2, '0');
+      const monthStr = mes.toString().padStart(2, '0');
+      const dateStr = `${dayStr}/${monthStr}/${anio}`;
+
+      mostrarBotonCancelar();
+      notificar('PROGRESO', { actual: 0, total: 0, archivo: `📅 ${dateStr} - ${nombreTipo}...`, accion: 'skip' });
+      console.log(`[SRI v3 Emitidos] Procesando Día: ${dateStr} | Tipo: ${nombreTipo} (${tipo})`);
+
+      const inputFecha = document.querySelector('input[id*="fechaEmision_input" i], input[id*="fecha" i]');
+      const btnConsultar = buscarBotonConsultar();
+
+      if (!inputFecha || !btnConsultar) {
+        notificar('ERROR_DESCARGA', { mensaje: 'Controles no encontrados. ¿Estás en "Comprobantes electrónicos emitidos"?' });
+        return;
+      }
+
+      // A. Configurar Fecha a través de background script para PrimeFaces Datepicker
+      try {
+        const originalOutline = inputFecha.style.outline;
+        inputFecha.style.outline = '4px solid #ff4757';
+        inputFecha.scrollIntoView({ behavior: 'auto', block: 'center' });
+        await esperarAleatorio(800, 1500); // Pausa visual humana para la fecha
+        
+        await new Promise((resolve) => {
+          chrome.runtime.sendMessage(
+            { action: 'EJECUTAR_EN_MAIN_WORLD_DATE', inputId: inputFecha.id, dateStr: dateStr },
+            () => resolve()
+          );
+        });
+        
+        inputFecha.style.outline = originalOutline;
+      } catch(e) {}
+      await esperarAleatorio(500, 1000);
+
+      // B. Seleccionar Estado Autorización
+      const selEstado = document.querySelector('select[id*="estadoAutorizacion" i]') || Array.from(document.querySelectorAll('select')).find(s => s.textContent.toLowerCase().includes('autorizado'));
+      if (selEstado) {
+        const originalOutline = selEstado.style.outline;
+        selEstado.style.outline = '4px solid #ff4757';
+        await esperarAleatorio(600, 1200); // Pausa visual humana para el estado
+
+        const opts = Array.from(selEstado.options);
+        const optAut = opts.find(o => normalizarTexto(o.textContent).includes('autorizado') && !normalizarTexto(o.textContent).includes('no'));
+        if (optAut) {
+          selEstado.value = optAut.value;
+          selEstado.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        
+        selEstado.style.outline = originalOutline;
+      }
+      await esperarAleatorio(800, 1500);
+
+      // B2. Establecimiento (Todos) - Requerido por el usuario
+      const selEstablecimiento = document.querySelector('select[id*="establecimiento" i]') || Array.from(document.querySelectorAll('select')).find(s => s.textContent.toLowerCase().includes('todos') && !s.textContent.toLowerCase().includes('factura'));
+      if (selEstablecimiento) {
+        const originalOutline = selEstablecimiento.style.outline;
+        selEstablecimiento.style.outline = '4px solid #ff4757';
+        await esperarAleatorio(600, 1200); // Pausa visual
+
+        const opts = Array.from(selEstablecimiento.options);
+        const optTodos = opts.find(o => normalizarTexto(o.textContent).includes('todos'));
+        if (optTodos) {
+          selEstablecimiento.value = optTodos.value;
+          selEstablecimiento.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        
+        selEstablecimiento.style.outline = originalOutline;
+      }
+      await esperarAleatorio(800, 1500);
+
+      // C. Seleccionar Tipo
+      let selectTipo = null;
+      for (let i = 0; i < 15; i++) {
+        const todosLosSelects = Array.from(document.querySelectorAll('select'));
+        selectTipo = todosLosSelects.find(s => {
+          return Array.from(s.options).some(o => normalizarTexto(o.textContent).includes('factura'));
+        });
+        if (selectTipo) break;
+        await esperar(500); // Esperar a que PrimeFaces cargue las opciones vía AJAX
+      }
+
+      if (!selectTipo) {
+        notificar('ERROR_DESCARGA', { mensaje: 'No se encontró el campo Tipo de Comprobante en la pantalla. Verifica que estés en Emitidos.' });
+        console.error(`[SRI v3] No se encontró el select de Tipo de Comprobante tras esperar.`);
+        cancelado = true;
+        estado.activa = false;
+        await chrome.storage.local.set({ estadoDescargaEmi: estado });
+        return; // Detener descarga
+      }
+
+      // Omitido bloque duplicado
+
+      const seleccionado = await seleccionarTipoComprobante(selectTipo, tipo);
+      if (!seleccionado || !seleccionado.exito) {
+        const errorMsg = seleccionado?.error || `No se pudo seleccionar el tipo ${nombreTipo}.`;
+        notificar('ERROR_DESCARGA', { mensaje: errorMsg });
+        console.error(`[SRI v3] ${errorMsg} Deteniendo descarga.`);
+        cancelado = true;
+        estado.activa = false;
+        await chrome.storage.local.set({ estadoDescargaEmi: estado });
+        return; // No avanzar, detener aquí
+      }
+      
+      if (cancelado) return;
+      await esperarAleatorio(1500, 2500);
+      
+      // D. Consultar
+      const btnActual = buscarBotonConsultar();
+      if (btnActual) {
+        const originalOutline = btnActual.style.outline;
+        btnActual.style.outline = '4px solid #ff4757';
+        await esperarAleatorio(800, 1500); // Pausa antes de hacer clic en Consultar
+        await clickearElementoHumano(btnActual);
+        btnActual.style.outline = originalOutline;
+      }
+      if (cancelado) return;
+      
+      // E. Esperar la tabla
+      notificar('PROGRESO', { actual: 0, total: 0, archivo: `⏳ Cargando tabla...`, accion: 'skip' });
+      const cargado = await esperarCargaTabla();
+      if (cancelado) return;
+      
+      if (cargado) {
+        const configDescarga = { desde: 1, hasta: 0, tipo: tipoFmt };
+        const result = await procesarDescargaTipo(configDescarga, 'emitidos');
+        
+        if (result) {
+          estado.stats.ok += result.ok;
+          estado.stats.skip += result.skip;
+          estado.stats.err += result.err;
+          estado.stats.porTipo[tipo] = (estado.stats.porTipo[tipo] || 0) + result.ok;
+        }
+      }
+
+      // Finalizar este tipo y avanzar
+      estado.tipoActualIndex++;
+      await chrome.storage.local.set({ estadoDescargaEmi: estado });
+      await avanzarAlSiguienteEmi();
+
+    } catch (e) {
+      console.error('[SRI v3 Emitidos] Error crítico en ciclo:', e);
+      notificar('ERROR_DESCARGA', { mensaje: e.message || String(e) });
+    }
+  }
+
+  async function avanzarAlSiguienteEmi() {
+    if (cancelado) return;
+    console.log('[SRI v3] Recargando página para el siguiente ciclo Emitidos...');
+    notificar('PROGRESO', {
+      actual: 0, total: 0,
+      archivo: '🔄 Refrescando el sistema SRI...',
+      accion: 'skip'
+    });
+    await esperar(1500);
+    location.reload();
+  }
+
+  // ══════════════════════════════════════════════════════════
+  //  PROCESAR EL SIGUIENTE TIPO EN EL ESTADO ACTUAL (Recibidos)
   // ══════════════════════════════════════════════════════════
   async function procesarSiguienteTipo() {
     try {
@@ -774,37 +1024,75 @@
   // Selecciona la opción adecuada en el select y dispara la cadena completa de eventos
   // para que JSF/PrimeFaces procese el cambio correctamente
   async function seleccionarTipoComprobante(selectEl, codTipo) {
+    // codTipo puede ser el código ('01') o el nombre ('Factura') dependiendo de si viene de Recibidos o Emitidos
+    const mapaCodigos = {
+      'factura': '01',
+      'liquidacion': '03',
+      'liquidación': '03',
+      'credito': '04',
+      'crédito': '04',
+      'debito': '05',
+      'débito': '05',
+      'remision': '06',
+      'remisión': '06',
+      'retencion': '07',
+      'retención': '07'
+    };
+
+    let codigoReal = codTipo;
+    const codTipoNorm = normalizarTexto(codTipo);
+    
+    // Si no es un código numérico, buscarlo en el mapa
+    if (!/^\d{2}$/.test(codigoReal)) {
+      for (const [key, val] of Object.entries(mapaCodigos)) {
+        if (codTipoNorm.includes(key)) {
+          codigoReal = val;
+          break;
+        }
+      }
+    }
+
     const palabrasClave = {
       '01': ['factura'],
       '03': ['liquidac'],
       '04': ['cred', 'créd'],
       '05': ['deb', 'déb'],
-      '07': ['retencion']
+      '06': ['remision', 'remisión', 'guia', 'guía'],
+      '07': ['retencion', 'retención']
     };
 
-    const keywords = palabrasClave[codTipo];
-    if (!keywords) return { cambiado: false, exito: false };
+    const keywords = palabrasClave[codigoReal];
+    if (!keywords) {
+      return { cambiado: false, exito: false, error: `No se encontró mapeo para el tipo: ${codTipo}` };
+    }
 
-    const options = Array.from(selectEl.options);
     let optionTarget = null;
     let optionIndex = -1;
 
-    for (let i = 0; i < options.length; i++) {
-      const opt = options[i];
-      const txt = normalizarTexto(opt.textContent);
-      const val = opt.value || '';
+    // Bucle de espera para dar tiempo a que PrimeFaces pueble el select vía AJAX tras un reload
+    for (let attempt = 0; attempt < 15; attempt++) {
+      const options = Array.from(selectEl.options);
       
-      if (keywords.some(kw => txt.includes(kw)) || val === codTipo || val === parseInt(codTipo).toString()) {
-        optionTarget = opt;
-        optionIndex = i;
-        break;
+      for (let i = 0; i < options.length; i++) {
+        const opt = options[i];
+        const txt = normalizarTexto(opt.textContent);
+        const val = opt.value || '';
+        
+        if (keywords.some(kw => txt.includes(kw)) || val === codTipo || val === parseInt(codTipo).toString()) {
+          optionTarget = opt;
+          optionIndex = i;
+          break;
+        }
       }
+      
+      if (optionTarget) break;
+      await esperar(400); // Esperar un poco antes del siguiente intento
     }
 
     if (!optionTarget) {
-      console.warn(`[SRI v3] No se encontró opción para tipo ${codTipo} en el select. Opciones disponibles:`,
-        Array.from(selectEl.options).map(o => `"${o.textContent.trim()}" (val=${o.value})`).join(', '));
-      return { cambiado: false, exito: false };
+      const msg = `No se encontró la opción "${codTipo}" en el select de Tipo de Comprobante tras esperar. (Opciones actuales: ${Array.from(selectEl.options).map(o => o.textContent.trim()).join(', ')})`;
+      console.warn(`[SRI v3] ` + msg);
+      return { cambiado: false, exito: false, error: msg };
     }
 
     // Forzar siempre la interacción y sincronización con el servidor para evitar desajustes de JSF
@@ -978,6 +1266,45 @@
     return false;
   }
 
+  // Helper para Emitidos: seleccionar opción exacta
+  async function seleccionarTipoComprobanteExacto(selectEl, textToFind) {
+    const options = Array.from(selectEl.options);
+    const targetOpt = options.find(o => normalizarTexto(o.textContent) === normalizarTexto(textToFind));
+    
+    if (!targetOpt) return false;
+    
+    const pfWrapper = selectEl.closest('.ui-selectonemenu') || document.getElementById(selectEl.id.replace(/_input$/, ''));
+    if (pfWrapper) {
+      // Simular selección de PrimeFaces
+      const trigger = pfWrapper.querySelector('.ui-selectonemenu-trigger') || pfWrapper;
+      await clickearElementoHumano(trigger);
+      await esperar(800);
+      
+      const panelId = pfWrapper.id + '_panel';
+      let panel = document.getElementById(panelId);
+      if (!panel) panel = document.querySelector('.ui-selectonemenu-panel');
+      
+      if (panel) {
+        const items = Array.from(panel.querySelectorAll('li.ui-selectonemenu-item'));
+        const targetLi = items.find(li => normalizarTexto(li.textContent) === normalizarTexto(textToFind));
+        if (targetLi) {
+          targetLi.scrollIntoView({ behavior: 'auto', block: 'nearest' });
+          await esperar(500);
+          await clickearElementoHumano(targetLi);
+          await esperar(800);
+          return true;
+        }
+      }
+    }
+    
+    // Fallback nativo
+    selectEl.value = targetOpt.value;
+    ['mousedown', 'click', 'input', 'change'].forEach(evt => {
+      try { selectEl.dispatchEvent(new Event(evt, { bubbles: true })); } catch(e){}
+    });
+    return true;
+  }
+
   // Espera a que la tabla termine de cargar dinámicamente
   async function esperarCargaTabla() {
     console.log('[SRI v3] Esperando a que se cargue la tabla...');
@@ -1094,11 +1421,15 @@
     const pdf = document.querySelectorAll('a[id*="lnkPdf"]').length;
     console.log(`[SRI Descargador v3] ✅ Listo | ${xml} botones XML | ${pdf} botones PDF/RIDE`);
     
-    chrome.storage.local.get('estadoDescarga', (data) => {
+    chrome.storage.local.get(['estadoDescarga', 'estadoDescargaEmi'], (data) => {
       if (data.estadoDescarga && data.estadoDescarga.activa) {
-        console.log('[SRI v3] Reanudando descarga tras recarga de página...');
+        console.log('[SRI v3] Reanudando descarga tras recarga de página (Recibidos)...');
         mostrarBotonCancelar();
         procesarSiguienteTipo();
+      } else if (data.estadoDescargaEmi && data.estadoDescargaEmi.activa) {
+        console.log('[SRI v3] Reanudando descarga tras recarga de página (Emitidos)...');
+        mostrarBotonCancelar();
+        procesarSiguienteEmi();
       }
     });
   }, 1500);
